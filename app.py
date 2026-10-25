@@ -1,125 +1,120 @@
 import streamlit as st
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import pipeline
 
+# Page Configuration
 st.set_page_config(
     page_title="Local AI Chatbot",
     page_icon="🤖",
     layout="centered",
 )
 
-st.markdown("""
-<style>
-.stApp {
-    background-color: #ffffff;
-    color: #333333;
-}
-.stChatMessage {
-    padding: 1rem;
-    border-radius: 12px;
-    margin-bottom: 10px;
-}
-#MainMenu, footer, header {
-    visibility: hidden;
-}
-</style>
-""", unsafe_allow_html=True)
+# Custom CSS
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #ffffff;
+        color: #333333;
+    }
+    .stChatMessage {
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 10px;
+    }
+    .stChatInputContainer {
+        background-color: #f0f2f6 !important;
+        border-radius: 12px;
+        padding: 5px;
+        border: 1px solid #d0d5dd;
+    }
+    #MainMenu, footer, header {
+        visibility: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
+# Sidebar
 with st.sidebar:
     st.title("⚙️ Settings")
-    st.write("Running with an open-source language model")
+    st.write("Running locally on an open-source model (no API key).")
 
-    if st.button("🗑️ Clear Conversation"):
+    if st.button("🗑️ Clear Chat"):
         st.session_state.messages = []
         st.rerun()
 
-    st.markdown("---")
-    st.caption("Model: Microsoft Phi-3 Mini")
-
+# Main Header
 st.markdown(
-    "<h1 style='text-align:center;color:#202123'>"
-    "Local AI Assistant</h1>",
+    "<h1 style='text-align:center;color:#202123'>Local AI Assistant</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
     "<p style='text-align:center;color:#6e6e80'>"
-    "Open-source AI chatbot</p>",
+    "Uses locally downloaded model weights without external AI APIs.</p>",
     unsafe_allow_html=True,
 )
 
+# Load the lightweight model once per app process.
 @st.cache_resource
 def load_model():
-    model_name = "microsoft/Phi-3-mini-4k-instruct"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        device_map="auto",
-        torch_dtype="auto",
-    )
     return pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
+        "text2text-generation",
+        model="google/flan-t5-small",
     )
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 try:
-    with st.spinner("Loading AI model..."):
-        chatbot = load_model()
+    with st.spinner("Loading local AI model..."):
+        chatbot_pipeline = load_model()
 except Exception as e:
     st.error(f"Could not load the model: {e}")
     st.info(
-        "Check your internet connection, installed packages, "
-        "available RAM, and model access."
+        "The first run needs internet access to download the model. "
+        "Check your connection, disk space, and installed packages."
     )
     st.stop()
 
+# Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Message Local AI..."):
+# User input
+if prompt := st.chat_input("Type your message here..."):
     st.session_state.messages.append(
         {"role": "user", "content": prompt}
     )
-
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Keep recent messages so the prompt stays within the model context.
-    history = st.session_state.messages[-10:]
-    chat_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful AI assistant. "
-                "Answer clearly and accurately."
-            ),
-        }
-    ] + history
-
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("AI is thinking..."):
             try:
-                prompt_text = chatbot.tokenizer.apply_chat_template(
-                    chat_messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
+                # FLAN-T5 is not a chat-tuned model. Add a simple instruction
+                # and recent turns as text context to make follow-ups clearer.
+                recent = st.session_state.messages[-6:-1]
+                context = "\n".join(
+                    f"{'User' if m['role'] == 'user' else 'Assistant'}: "
+                    f"{m['content']}"
+                    for m in recent
                 )
-                result = chatbot(
-                    prompt_text,
-                    max_new_tokens=512,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9,
-                    return_full_text=False,
+                model_input = (
+                    "You are a helpful assistant. Answer the user's latest "
+                    "message clearly. Use the conversation context if useful.\n"
+                    f"{context}\nUser: {prompt}\nAssistant:"
                 )
-                answer = result[0]["generated_text"].strip()
-                st.markdown(answer)
+                outputs = chatbot_pipeline(
+                    model_input,
+                    max_new_tokens=150,
+                    do_sample=False,
+                )
+                bot_response = outputs[0]["generated_text"].strip()
+                st.markdown(bot_response)
                 st.session_state.messages.append(
-                    {"role": "assistant", "content": answer}
+                    {"role": "assistant", "content": bot_response}
                 )
             except Exception as e:
-                st.error(f"Response generation failed: {e}")
+                st.error(f"Error generating response: {e}")
