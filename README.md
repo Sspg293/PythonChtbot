@@ -1,37 +1,28 @@
-# Local AI Chatbot (FLAN-T5 Small)
+# Streamlit Local AI Chatbot — Fixed dependencies
 
-This project runs a lightweight open-source model through Streamlit.
+## Fix for the screenshot error
 
-## Windows setup
+The app uses Google's `google/flan-t5-small` model with the
+`text2text-generation` pipeline. The screenshot indicates the installed
+Transformers version no longer supports that task. This project pins
+`transformers==4.44.2`, which supports the pipeline.
 
-1. Extract this ZIP file.
-2. Open Command Prompt or PowerShell in the extracted folder.
-3. (Recommended) Create a virtual environment:
+## Redeploy on Streamlit Community Cloud
 
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
+1. Replace your repository's `app.py` with the included `app.py`.
+2. Replace `requirements.txt` with the included `requirements.txt`.
+3. Commit and push both files to the GitHub repository connected to Streamlit.
+4. In Streamlit Cloud, open **Manage app** and reboot/redeploy the app.
+5. If the old dependencies remain cached, use the app's reboot/redeploy option
+   or clear/rebuild the environment if available.
 
-   If PowerShell blocks activation, use Command Prompt and run:
-   `.venv\Scripts\activate.bat`
+Do not upload this ZIP to the app URL itself; update the connected GitHub repo.
 
-4. Install the packages:
+## Run locally
 
-   ```powershell
-   python -m pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+```bash
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
 
-5. Launch:
-
-   ```powershell
-   streamlit run app.py
-   ```
-
-6. Open the local URL shown in the terminal, usually http://localhost:8501.
-
-## Important notes
-- The first launch requires internet to download `google/flan-t5-small`.
-- Once downloaded, it can run without external AI APIs; offline operation depends on model files and packages already being cached/installed.
-- FLAN-T5 Small is lightweight but less capable than larger chat-specific language models.
+The first run needs internet access to download model weights.
