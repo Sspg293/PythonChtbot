@@ -1,127 +1,125 @@
-import os
 import streamlit as st
-from groq import Groq
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-# Page Configuration
 st.set_page_config(
-    page_title="AI Assistant", page_icon="🤖", layout="centered"
+    page_title="Local AI Chatbot",
+    page_icon="🤖",
+    layout="centered",
 )
 
-# Custom CSS for clean ChatGPT-like look
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-color: #ffffff;
-        color: #333333;
-    }
-    .stChatMessage {
-        padding: 1rem;
-        border-radius: 12px;
-        margin-bottom: 10px;
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<style>
+.stApp {
+    background-color: #ffffff;
+    color: #333333;
+}
+.stChatMessage {
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 10px;
+}
+#MainMenu, footer, header {
+    visibility: hidden;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# Sidebar for Settings
 with st.sidebar:
-  st.title("⚙️ Control Panel")
-  st.write("Powered by Groq AI Models")
+    st.title("⚙️ Settings")
+    st.write("Running with an open-source language model")
 
-  # Model Selection
-  selected_model = st.selectbox(
-      "Select AI Model",
-      ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
-  )
+    if st.button("🗑️ Clear Conversation"):
+        st.session_state.messages = []
+        st.rerun()
 
-  # Clear Chat Button
-  if st.button("🗑️ Clear Conversation"):
-    st.session_state.messages = []
-    st.rerun()
+    st.markdown("---")
+    st.caption("Model: Microsoft Phi-3 Mini")
 
-  st.markdown("---")
-  st.markdown("🌐 **Multilingual Ready:** Type in any language!")
-  st.markdown("🚀 **Hosted on Streamlit & GitHub**")
-
-# Main Header
 st.markdown(
-    "<h1 style='text-align: center; color: #202123;'>AI Assistant</h1>",
+    "<h1 style='text-align:center;color:#202123'>"
+    "Local AI Assistant</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
-    "<p style='text-align: center; color: #6e6e80;'>How can I help you"
-    " today?</p>",
+    "<p style='text-align:center;color:#6e6e80'>"
+    "Open-source AI chatbot</p>",
     unsafe_allow_html=True,
 )
 
-# API Key validation
-api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+@st.cache_resource
+def load_model():
+    model_name = "microsoft/Phi-3-mini-4k-instruct"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map="auto",
+        torch_dtype="auto",
+    )
+    return pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+    )
 
-if not api_key:
-  st.warning(
-      "⚠️ Please set your `GROQ_API_KEY` in Streamlit secrets or environment"
-      " variables."
-  )
-else:
-  client = Groq(api_key=api_key)
-
-  # Initialize chat history
-  if "messages" not in st.session_state:
+if "messages" not in st.session_state:
     st.session_state.messages = []
 
-  # Display past messages
-  for message in st.session_state.messages:
-    # System message skip karein UI par dikhane ke liye
-    if message["role"] != "system":
-      with st.chat_message(message["role"]):
+try:
+    with st.spinner("Loading AI model..."):
+        chatbot = load_model()
+except Exception as e:
+    st.error(f"Could not load the model: {e}")
+    st.info(
+        "Check your internet connection, installed packages, "
+        "available RAM, and model access."
+    )
+    st.stop()
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-  # User Input
-  if prompt := st.chat_input("Message AI Assistant..."):
-    # Append user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if prompt := st.chat_input("Message Local AI..."):
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt}
+    )
+
     with st.chat_message("user"):
-      st.markdown(prompt)
+        st.markdown(prompt)
 
-    # Generate Assistant Response
-    with st.chat_message("assistant"):
-      message_placeholder = st.empty()
-      full_response = ""
-
-      try:
-        # System prompt to handle multiple languages dynamically
-        system_prompt = {
+    # Keep recent messages so the prompt stays within the model context.
+    history = st.session_state.messages[-10:]
+    chat_messages = [
+        {
             "role": "system",
             "content": (
-                "You are a helpful AI assistant. Detect the language of the"
-                " user's message and respond in that exact same language."
+                "You are a helpful AI assistant. "
+                "Answer clearly and accurately."
             ),
         }
+    ] + history
 
-        # Prepare messages including system instruction
-        messages_payload = [system_prompt] + [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.messages
-        ]
-
-        completion = client.chat.completions.create(
-            model=selected_model, messages=messages_payload, stream=True
-        )
-
-        for chunk in completion:
-          if chunk.choices[0].delta.content:
-            full_response += chunk.choices[0].delta.content
-            message_placeholder.markdown(full_response + "▌")
-
-        message_placeholder.markdown(full_response)
-        st.session_state.messages.append(
-            {"role": "assistant", "content": full_response}
-        )
-
-      except Exception as e:
-        st.error(f"An error occurred: {e}")
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            try:
+                prompt_text = chatbot.tokenizer.apply_chat_template(
+                    chat_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                result = chatbot(
+                    prompt_text,
+                    max_new_tokens=512,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    return_full_text=False,
+                )
+                answer = result[0]["generated_text"].strip()
+                st.markdown(answer)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": answer}
+                )
+            except Exception as e:
+                st.error(f"Response generation failed: {e}")
